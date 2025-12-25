@@ -17,3 +17,5 @@ magic-backend/__pycache__/
 .bash_history
 .bash_logout
 .bashrc
+
+.env

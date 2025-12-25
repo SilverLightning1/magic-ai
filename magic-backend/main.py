@@ -1,24 +1,54 @@
-import os, json, requests, base64, time, logging
+
+import os
+import json
+import base64
+import logging
+import requests
+import google.generativeai as genai
 from flask import Flask, request, jsonify
-from flask_cors import CORS
-from google.cloud import firestore
-from google.cloud import secretmanager
-import vertexai
-from vertexai.generative_models import GenerativeModel
+from flask_cors import CORS, cross_origin
+
+# --- CONFIGURATION ---
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Manual .env parsing
+env_vars = {}
+if os.path.exists(".env"):
+    with open(".env", "r") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                key, value = line.split("=", 1)
+                env_vars[key.strip()] = value.strip()
+
+GEMINI_API_KEY = env_vars.get("GEMINI_API_KEY")
+ELEVENLABS_API_KEY = env_vars.get("ELEVENLABS_API_KEY")
+
+# Initialize Flask
+app = Flask(__name__)
+cors = CORS(app)
+app.config['CORS_HEADERS'] = 'Content-Type'
+
+# --- 1. SETUP AI BRAIN (GOOGLE GEN AI) ---
+OFFLINE_MODE = False
+model = None
+
+if GEMINI_API_KEY:
+    try:
+        genai.configure(api_key=GEMINI_API_KEY)
+        model = genai.GenerativeModel("gemini-3-flash-preview")
+        logger.info("Connected to Gemini via API Key.")
+    except Exception as e:
+        logger.error(f"Gemini Init Failed: {e}")
+        OFFLINE_MODE = True
+else:
+    logger.warning("GEMINI_API_KEY not found in .env. Switching to OFFLINE MODE.")
+    OFFLINE_MODE = True
 
 # ==========================================
 #  MAGIC AI BACKEND v4 - VOICE FIX
 # ==========================================
-
-app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}})
-
-# Setup Logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger()
-
-PROJECT_ID = "project-60c97356-c813-498b-988"
-LOCATION = "us-central1"
 
 @app.route("/", methods=["GET"])
 def health():
@@ -26,190 +56,149 @@ def health():
 
 @app.route("/turn", methods=["POST"])
 def handle_turn():
-    try:
-        # --- 1. INGEST DATA ---
-        data = request.json
-        mode = data.get("mode", "coach")
-        target_lang = data.get("target_lang", "Spanish")
-        user_text = data.get("user_text", "")
-        session_id = data.get("session_id", "session_demo_1")
-        
-        logger.info(f"Received turn: {mode} | {user_text[:20]}...")
+    data = request.json
+    user_text = data.get("user_text", "")
+    mode = data.get("mode", "coach")
+    user_id = data.get("user_id", "Guest")
+    target_lang = data.get("target_lang", "Spanish")
 
-        # --- 2. INIT CLOUD ---
-        global OFFLINE_MODE
+    logger.info(f"Received turn: {mode} | {user_text}")
+
+    # --- 1. CONTEXT MANAGEMENT (Local Mock) ---
+    history_file = f"history_{user_id}.json"
+    history = []
+    if os.path.exists(history_file):
         try:
-            db = firestore.Client()
-            sm = secretmanager.SecretManagerServiceClient()
-            vertexai.init(project=PROJECT_ID, location=LOCATION)
-            OFFLINE_MODE = False
-        except Exception as e:
-            logger.warning(f"GCP Init Failed (Switching to Offline Mode): {e}")
-            OFFLINE_MODE = True
+            with open(history_file, "r") as f: history = json.load(f)
+        except: pass
+    
+    # Simple Context Window (Last 5 turns)
+    recent_history = history[-5:]
+    history_context = "\n".join([f"User: {h['user_text']}\nAI: {h['ai_text']}" for h in recent_history])
 
-        # --- 3. CONTEXT ---
-        if not OFFLINE_MODE:
-            collection_name = "coach_memory" if mode == "coach" else "translator_memory"
-            history_context = ""
-            try:
-                docs = db.collection("sessions").document(session_id).collection(collection_name)\
-                         .order_by("timestamp", direction=firestore.Query.DESCENDING).limit(6).stream()
-                past_turns = [d.to_dict() for d in docs]
-                past_turns.reverse()
-                for t in past_turns:
-                    ai_resp = t.get("ai_response", {})
-                    if mode == "coach":
-                        a_text = ai_resp.get("reply_target_language", "")
-                    else:
-                        a_text = ai_resp.get("translated_text", "")
-                    history_context += f"User: {t.get('user_input','')}\nAI: {a_text}\n"
-            except:
-                history_context = ""
-        else:
-            history_context = "OFFLINE CONTEXT"
+    # --- 2. PROMPT ENGINEERING & VOICE PERSONA ---
+    voice_persona = data.get("voice_persona", "rachel" if mode == "coach" else "antoni")
+    
+    # Voice ID Mapping (ElevenLabs)
+    voice_map = {
+        "rachel": "21m00Tcm4TlvDq8ikWAM",  # The Tutor (Coach Default)
+        "antoni": "ErXwobaYiN019PkySvjV",  # The Professional (Translator Default)
+        "bella": "EXAVITQu4vr4xnSDxMaL",   # The Peer (Casual Female)
+        "josh": "TxGEqnHWrfWFTfGW9XjX"     # The Peer (Casual Male)
+    }
+    voice_id = voice_map.get(voice_persona.lower(), "21m00Tcm4TlvDq8ikWAM")
 
-        # --- 4. PROMPT ENGINEERING ---
-        if mode == "coach":
-            voice_id = "21m00Tcm4TlvDq8ikWAM" # Rachel
-        else:
-            voice_id = "ErXwobaYiN019PkySvjV" # Antoni
-
-        # --- 5. GENERATE CONTENT ---
-        if not OFFLINE_MODE:
-            if mode == "coach":
-                instr = f"""You are MAGIC (Coach). Target: {target_lang}.
-                CONTEXT: {history_context}
-                
-                BEHAVIORAL PROTOCOL (The "Socratic Loop"):
-                1. VALIDATE: Acknowledge the user's attempt positively.
-                2. CORRECT: If there is an error, explain it gently. If no error, praise.
-                3. PROMPT: Ask a follow-up question to keep the conversation flowing.
-                
-                ADDITIONAL RULES:
-                - If the user switches language, translate their thought back to {target_lang} and guide them.
-                - Ignore filler words (um, uh).
-                
-                OUTPUT JSON:
-                {{
-                  "reply_target_language": "string",
-                  "reply_user_language": "string",
-                  "corrections": [{{"corrected":"string"}}],
-                  "speak_segments": [{{"text":"string"}}]
-                }}
-                """
-            else:
-                instr = f"""You are MAGIC (Translator).
-                GOAL: Detect the language of the INPUT text automatically.
-                ACTION: Translate the input text into {target_lang}.
-                
-                BEHAVIORAL PROTOCOL (The "Ghost" Protocol):
-                - Remove your personality.
-                - Preserve the FIRST-PERSON perspective (e.g., "I am hungry" -> "Tengo hambre", NOT "He says he is hungry").
-                
-                CULTURAL SAFETY:
-                - If a translation is grammatically correct but culturally offensive (e.g. wrong formality), WARN the user in the output text processing.
-                
-                OUTPUT JSON:
-                {{
-                  "translated_text": "string",
-                  "speak_segments": [{{"text":"string"}}]
-                }}
-                """
-            
-            model = GenerativeModel("gemini-2.0-flash-001", system_instruction=instr)
-            response = model.generate_content(user_text)
-            
-            clean_json = response.text.strip().replace('```json', '').replace('```', '')
-            try:
-                llm = json.loads(clean_json)
-            except:
-                logger.error("JSON Parse Failed")
-                llm = {"reply_target_language": "I'm having trouble thinking.", "translated_text": "Error."}
-        else:
-            # OFFLINE DUMMY RESPONSE
-            logger.info("Generating Offline Response")
-            dummy_text = f"I am in offline mode. I heard: {user_text}"
-            llm = {
-                "reply_target_language": dummy_text,
-                "translated_text": dummy_text,
-                "reply_user_language": "Offline Mode",
-                "speak_segments": [{"text": dummy_text}]
-            }
-
-        # --- 6. AUDIO FIX (ELEVENLABS) ---
-        speak_text = ""
-        if "speak_segments" in llm and llm["speak_segments"]:
-            speak_text = " ".join([s.get("text", "") for s in llm["speak_segments"]])
+    instr = ""
+    if mode == "coach":
+        instr = f"""You are MAGIC (Coach). Target: {target_lang}.
+        CONTEXT: {history_context}
         
-        if not speak_text:
-            if mode == "coach":
-                speak_text = llm.get("reply_target_language", "")
-            else:
-                speak_text = llm.get("translated_text", "")
-
-        logger.info(f"Attempting to speak: {speak_text}")
+        BEHAVIORAL PROTOCOL (The "Socratic Loop"):
+        1. VALIDATE: Acknowledge the user's attempt positively.
+        2. CORRECT: If there is an error, explain it gently. If no error, praise.
+        3. PROMPT: Ask a follow-up question to keep the conversation flowing.
         
-        audio_b64 = ""
-        if speak_text:
+        ADDITIONAL RULES:
+        - If the user switches language, translate their thought back to {target_lang} and guide them.
+        - Ignore filler words (um, uh).
+        
+        OUTPUT JSON:
+        {{
+            "reply_target_language": "string",
+            "reply_user_language": "string",
+            "corrections": [{{"corrected":"string"}}],
+            "speak_segments": [{{"text":"string"}}]
+        }}
+        """
+    else:
+        instr = f"""You are MAGIC (Translator).
+        GOAL: Detect the language of the INPUT text automatically.
+        ACTION: Translate the input text into {target_lang}.
+        
+        BEHAVIORAL PROTOCOL (The "Ghost" Protocol):
+        - Remove your personality.
+        - Preserve the FIRST-PERSON perspective (e.g., "I am hungry" -> "Tengo hambre", NOT "He says he is hungry").
+        
+        CULTURAL SAFETY:
+        - If a translation is grammatically correct but culturally offensive (e.g. wrong formality), WARN the user in the output text processing.
+        
+        OUTPUT JSON:
+        {{
+            "translated_text": "string",
+            "speak_segments": [{{"text":"string"}}]
+        }}
+        """
+
+    # --- 3. GENERATE CONTENT ---
+    ai_text = ""
+    speak_text = ""
+    
+    if not OFFLINE_MODE and model:
+        try:
+            # Google Gen AI Call
+            prompt = f"{instr}\nUSER INPUT: {user_text}"
+            response = model.generate_content(prompt)
+            
             try:
-                # Retrieve Key
-                eleven_key = ""
-                if not OFFLINE_MODE:
-                    try:
-                        secret_path = f"projects/{PROJECT_ID}/secrets/ELEVENLABS_API_KEY/versions/latest"
-                        eleven_key = sm.access_secret_version(request={"name": secret_path}).payload.data.decode("UTF-8")
-                    except Exception as e:
-                        logger.warning(f"Secret Manager failed: {e}")
+                # Clean JSON
+                text_res = response.text.strip()
+                if text_res.startswith("```json"): text_res = text_res[7:-3]
                 
-                # FALLBACK 1: .env file
-                if not eleven_key:
-                    try:
-                        if os.path.exists(".env"):
-                            with open(".env", "r") as f:
-                                for line in f:
-                                    if line.startswith("ELEVENLABS_API_KEY="):
-                                        eleven_key = line.split("=", 1)[1].strip()
-                                        logger.info("Loaded ElevenLabs Key from .env")
-                                        break
-                    except Exception as e:
-                        logger.warning(f"Failed to read .env: {e}")
-
-                # FALLBACK 2: Hardcoded String
-                if not eleven_key:
-                    # REPLACE THIS STRING with your actual API key for testing
-                    eleven_key = "YOUR_ELEVENLABS_API_KEY_HERE" 
-
-                if eleven_key and eleven_key != "YOUR_ELEVENLABS_API_KEY_HERE":
-                    v_url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
-                    v_headers = { "xi-api-key": eleven_key, "Content-Type": "application/json" }
-                    v_payload = { "text": speak_text, "model_id": "eleven_multilingual_v2" }
-                    
-                    v_res = requests.post(v_url, json=v_payload, headers=v_headers)
-                    if v_res.status_code == 200:
-                        audio_b64 = base64.b64encode(v_res.content).decode('utf-8')
-                        logger.info("ElevenLabs audio generated successfully.")
-                    else:
-                        logger.error(f"ElevenLabs API Error ({v_res.status_code}): {v_res.text}")
+                res_json = json.loads(text_res)
+                
+                if mode == "coach":
+                    speak_text = " ".join([s["text"] for s in res_json.get("speak_segments", [])])
+                    ai_text = speak_text 
                 else:
-                    logger.warning("No valid ElevenLabs API key found (Secret Manager failed and no fallback provided).")
+                    speak_text = res_json.get("translated_text", "")
+                    ai_text = speak_text
+
             except Exception as e:
-                logger.error(f"Audio Logic Crash: {e}")
+                logger.error(f"JSON Parse Error: {e}")
+                ai_text = response.text
+                speak_text = response.text
 
-        # --- 7. RESPONSE ---
-        display_text = llm.get("reply_target_language", "") if mode == "coach" else llm.get("translated_text", "")
-        if mode == "coach" and llm.get("reply_user_language"):
-            display_text += f"\n({llm.get('reply_user_language')})"
+        except Exception as e:
+            logger.error(f"GenAI Error: {e}")
+            ai_text = f"Brain Error: {e}"
+            speak_text = "System error."
+    
+    else:
+        # Offline Fallback
+        logger.info("Generating Offline Response")
+        ai_text = f"I am in offline mode. I heard: {user_text}"
+        speak_text = ai_text
 
-        # Async Save
-        return jsonify({
-            "reply_text": display_text,
-            "audio_data": audio_b64,
-            "detected": "Detected"
-        })
+    # --- 4. TEXT TO SPEECH (ELEVENLABS) ---
+    logger.info(f"Attempting to speak: {speak_text}")
+    audio_b64 = ""
+    
+    if speak_text and ELEVENLABS_API_KEY and ELEVENLABS_API_KEY != "YOUR_ELEVENLABS_API_KEY_HERE":
+        try:
+            v_url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+            v_headers = { "xi-api-key": ELEVENLABS_API_KEY, "Content-Type": "application/json" }
+            v_payload = { "text": speak_text, "model_id": "eleven_multilingual_v2" }
+            
+            v_res = requests.post(v_url, json=v_payload, headers=v_headers)
+            if v_res.status_code == 200:
+                audio_b64 = base64.b64encode(v_res.content).decode('utf-8')
+                logger.info("ElevenLabs audio generated successfully.")
+            else:
+                logger.error(f"ElevenLabs API Error ({v_res.status_code}): {v_res.text}")
+        except Exception as e:
+            logger.error(f"Audio Logic Crash: {e}")
 
-    except Exception as e:
-        logger.critical(f"SERVER CRASH: {e}")
-        return jsonify({"error": str(e)}), 500
+    # Save History
+    history.append({"user_text": user_text, "ai_text": ai_text})
+    try:
+        with open(history_file, "w") as f: json.dump(history, f)
+    except: pass
+
+    return jsonify({
+        "reply_text": ai_text,
+        "audio_data": audio_b64,
+        "mode": mode
+    })
 
 # --- USER & ACCOUNT ENDPOINTS ---
 
