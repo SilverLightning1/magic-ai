@@ -79,7 +79,16 @@ def handle_turn():
             if mode == "coach":
                 instr = f"""You are MAGIC (Coach). Target: {target_lang}.
                 CONTEXT: {history_context}
-                BEHAVIOR: Chat in {target_lang}. If user speaks English, translate. Correct gently.
+                
+                BEHAVIORAL PROTOCOL (The "Socratic Loop"):
+                1. VALIDATE: Acknowledge the user's attempt positively.
+                2. CORRECT: If there is an error, explain it gently. If no error, praise.
+                3. PROMPT: Ask a follow-up question to keep the conversation flowing.
+                
+                ADDITIONAL RULES:
+                - If the user switches language, translate their thought back to {target_lang} and guide them.
+                - Ignore filler words (um, uh).
+                
                 OUTPUT JSON:
                 {{
                   "reply_target_language": "string",
@@ -89,9 +98,17 @@ def handle_turn():
                 }}
                 """
             else:
-                instr = f"""You are MAGIC (Translator). Target: {target_lang}.
-                CONTEXT: {history_context}
-                BEHAVIOR: Translate meaning.
+                instr = f"""You are MAGIC (Translator).
+                GOAL: Detect the language of the INPUT text automatically.
+                ACTION: Translate the input text into {target_lang}.
+                
+                BEHAVIORAL PROTOCOL (The "Ghost" Protocol):
+                - Remove your personality.
+                - Preserve the FIRST-PERSON perspective (e.g., "I am hungry" -> "Tengo hambre", NOT "He says he is hungry").
+                
+                CULTURAL SAFETY:
+                - If a translation is grammatically correct but culturally offensive (e.g. wrong formality), WARN the user in the output text processing.
+                
                 OUTPUT JSON:
                 {{
                   "translated_text": "string",
@@ -144,7 +161,20 @@ def handle_turn():
                     except Exception as e:
                         logger.warning(f"Secret Manager failed: {e}")
                 
-                # FALLBACK: Paste your ElevenLabs Key here if Secret Manager fails
+                # FALLBACK 1: .env file
+                if not eleven_key:
+                    try:
+                        if os.path.exists(".env"):
+                            with open(".env", "r") as f:
+                                for line in f:
+                                    if line.startswith("ELEVENLABS_API_KEY="):
+                                        eleven_key = line.split("=", 1)[1].strip()
+                                        logger.info("Loaded ElevenLabs Key from .env")
+                                        break
+                    except Exception as e:
+                        logger.warning(f"Failed to read .env: {e}")
+
+                # FALLBACK 2: Hardcoded String
                 if not eleven_key:
                     # REPLACE THIS STRING with your actual API key for testing
                     eleven_key = "YOUR_ELEVENLABS_API_KEY_HERE" 
