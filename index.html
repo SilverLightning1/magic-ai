@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Magic AI</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #050505;
+            --accent-coach: #8b5cf6;
+            /* Violet */
+            --accent-trans: #06b6d4;
+            /* Cyan */
+            --text-primary: #ffffff;
+            --text-secondary: rgba(255, 255, 255, 0.5);
+            --card-bg: rgba(255, 255, 255, 0.05);
+            --input-bg: rgba(255, 255, 255, 0.08);
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* --- THEME HANDLING --- */
+        body.theme-coach {
+            --active-accent: var(--accent-coach);
+        }
+
+        body.theme-translator {
+            --active-accent: var(--accent-trans);
+        }
+
+        /* --- VIEWS --- */
+        .view {
+            display: none;
+            width: 100%;
+            height: 100%;
+            flex-direction: column;
+            align-items: center;
+            opacity: 0;
+            transition: opacity 0.5s;
+        }
+
+        .view.active {
+            display: flex;
+            opacity: 1;
+        }
+
+        /* --- HOMEPAGE --- */
+        #view-home {
+            justify-content: center;
+            text-align: center;
+            gap: 30px;
+            position: relative;
+        }
+
+        .hero-title {
+            font-size: 40px;
+            font-weight: 700;
+            letter-spacing: -1px;
+            margin-bottom: 10px;
+        }
+
+        .hero-title span {
+            color: var(--accent-coach);
+        }
+
+        .hero-subtitle {
+            color: var(--text-secondary);
+            max-width: 300px;
+            margin: 0 auto;
+            line-height: 1.5;
+            font-size: 15px;
+        }
+
+        .auth-section {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            width: 280px;
+        }
+
+        .btn {
+            background: var(--card-bg);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: white;
+            padding: 14px;
+            border-radius: 12px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+
+        .btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            transform: translateY(-1px);
+        }
+
+        .btn-primary {
+            background: var(--accent-coach);
+            border: none;
+        }
+
+        .btn-primary:hover {
+            background: #7c3aed;
+        }
+
+        .btn-trans {
+            background: var(--accent-trans);
+            border: none;
+            color: #000;
+        }
+
+        .btn-trans:hover {
+            background: #0891b2;
+        }
+
+        .dash-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            width: 300px;
+        }
+
+        .history-card {
+            background: var(--card-bg);
+            padding: 16px;
+            border-radius: 16px;
+            text-align: left;
+            font-size: 14px;
+        }
+
+        .history-card h4 {
+            margin: 0 0 8px 0;
+            font-weight: 600;
+            font-size: 12px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+        }
+
+        /* --- WORKSPACE (COACH & TRANSLATOR) --- */
+        .header {
+            width: 100%;
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 10;
+        }
+
+        .brand {
+            font-weight: 600;
+            font-size: 18px;
+        }
+
+        /* Central Orb / Visuals */
+        .stage {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            width: 100%;
+        }
+
+        .orb-container {
+            width: 120px;
+            height: 120px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            cursor: pointer;
+        }
+
+        /* Coach Style: Concentric Rings */
+        .coach-visual .ring {
+            position: absolute;
+            border-radius: 50%;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .coach-visual .ring:nth-child(1) {
+            width: 160px;
+            height: 160px;
+        }
+
+        .coach-visual .ring:nth-child(2) {
+            width: 300px;
+            height: 300px;
+            opacity: 0.5;
+        }
+
+        .coach-visual .ring:nth-child(3) {
+            width: 500px;
+            height: 500px;
+            opacity: 0.2;
+        }
+
+        .core {
+            width: 20px;
+            height: 20px;
+            background: var(--active-accent);
+            border-radius: 50%;
+            box-shadow: 0 0 30px var(--active-accent);
+            transition: all 0.3s;
+        }
+
+        .listening .core {
+            width: 30px;
+            height: 30px;
+            background: white;
+        }
+
+        .listening .ring {
+            border-color: var(--active-accent);
+            animation: pulse 2s infinite;
+        }
+
+        /* Translator Style: Dual Waves (Abstracted) */
+        .trans-visual {
+            display: none;
+            width: 100%;
+            height: 100px;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+        }
+
+        .bar {
+            width: 6px;
+            height: 30px;
+            background: var(--accent-trans);
+            border-radius: 4px;
+        }
+
+        .theme-translator .trans-visual {
+            display: flex;
+        }
+
+        .theme-translator .coach-visual {
+            display: none;
+        }
+
+        .listening .bar {
+            animation: wave 1s infinite ease-in-out;
+        }
+
+        .bar:nth-child(1) {
+            animation-delay: 0.1s;
+        }
+
+        .bar:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .bar:nth-child(3) {
+            animation-delay: 0.3s;
+        }
+
+        @keyframes pulse {
+            0% {
+                transform: scale(1);
+                opacity: 0.5;
+            }
+
+            100% {
+                transform: scale(1.1);
+                opacity: 0;
+            }
+        }
+
+        @keyframes wave {
+
+            0%,
+            100% {
+                height: 30px;
+                opacity: 0.5;
+            }
+
+            50% {
+                height: 60px;
+                opacity: 1;
+            }
+        }
+
+        .status {
+            margin-top: 60px;
+            font-size: 12px;
+            letter-spacing: 2px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+        }
+
+        .response {
+            min-height: 40px;
+            margin-top: 20px;
+            text-align: center;
+            font-size: 16px;
+            max-width: 80%;
+            opacity: 0.9;
+        }
+
+        /* --- TEXT INPUT SHEET --- */
+        .sheet {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            background: #121212;
+            border-top-left-radius: 32px;
+            border-top-right-radius: 32px;
+            padding: 30px;
+            box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.5);
+            transform: translateY(100%);
+            transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+            z-index: 20;
+            box-sizing: border-box;
+        }
+
+        .sheet.open {
+            transform: translateY(0);
+        }
+
+        .sheet-handle {
+            width: 40px;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 2px;
+            margin: 0 auto 20px;
+        }
+
+        .sheet-title {
+            text-align: center;
+            font-weight: 600;
+            margin-bottom: 20px;
+        }
+
+        .text-area {
+            width: 100%;
+            height: 120px;
+            background: var(--input-bg);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 16px;
+            color: white;
+            font-family: inherit;
+            resize: none;
+            margin-bottom: 16px;
+        }
+
+        .icon-btn {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+        }
+
+        /* Utility */
+        .hidden {
+            display: none;
+        }
+
+        .fade-in {
+            animation: fadeIn 0.5s forwards;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+    </style>
+</head>
+
+<body class="theme-coach">
+
+    <!-- HOME VIEW -->
+    <div id="view-home" class="view active">
+        <div class="hero">
+            <div class="hero-title">Magic <span>AI</span></div>
+            <div class="hero-subtitle">Your personal language coach and universal interpreter.</div>
+        </div>
+
+        <!-- Start / Auth -->
+        <div id="auth-forms" class="auth-section">
+            <input type="text" id="username-in" placeholder="Enter Username (ex: Sanjit)"
+                style="padding:12px; border-radius:8px; border:1px solid #333; background:#111; color:white;">
+            <button class="btn btn-primary" onclick="handleLogin()">Create Account / Login</button>
+            <button class="btn" onclick="enterGuest()">Continue as Guest</button>
+        </div>
+
+        <!-- Logged In Dashboard (Hidden by default) -->
+        <div id="dashboard" class="auth-section hidden">
+            <div style="text-align:left; margin-bottom:10px;">Welcome back, <span id="user-display"
+                    style="color:white; font-weight:600;"></span></div>
+
+            <div class="dash-grid">
+                <div class="history-card" onclick="enterMode('coach')">
+                    <h4>Coach</h4>
+                    Resume Session<br><span style="font-size:10px; opacity:0.6;">Just now</span>
+                </div>
+                <div class="history-card" onclick="enterMode('translator')"
+                    style="border: 1px solid var(--accent-trans);">
+                    <h4>Translator</h4>
+                    Start New<br><span style="font-size:10px; opacity:0.6;">Spanish</span>
+                </div>
+            </div>
+
+            <div class="history-card" style="width:100%; margin-top:12px;">
+                <h4>Recommended for you</h4>
+                <div id="rec-list" style="opacity:0.8;">Loading...</div>
+            </div>
+        </div>
+
+        <select id="lang-select-home" style="background:#111; color:#888; border:none; margin-top:20px; padding:8px;">
+            <option value="Spanish">Selected: Spanish</option>
+            <option value="French">French</option>
+        </select>
+    </div>
+
+    <!-- MAIN WORKSPACE VIEW -->
+    <div id="view-workspace" class="view">
+        <div class="header">
+            <div class="brand" id="mode-title">Coach Mode</div>
+            <button class="icon-btn" onclick="goHome()">✕</button>
+        </div>
+
+        <div class="stage">
+            <!-- Coach Visuals -->
+            <div class="orb-container coach-visual" id="orb" onclick="toggleMic()">
+                <div class="ring"></div>
+                <div class="ring"></div>
+                <div class="ring"></div>
+                <div class="core"></div>
+            </div>
+
+            <!-- Translator Visuals -->
+            <div class="trans-visual" onclick="toggleMic()">
+                <div class="bar"></div>
+                <div class="bar"></div>
+                <div class="bar"></div>
+                <div class="bar"></div>
+            </div>
+
+            <div class="status" id="status-text">TAP TO START</div>
+            <div class="response" id="response-text"></div>
+        </div>
+    </div>
+
+    <script>
+        const BACKEND_URL = "http://localhost:8080";
+        let currentUser = null;
+        let currentMode = 'coach';
+        let isListening = false;
+        let recognition;
+
+        // --- AUTH & NAV ---
+        async function handleLogin() {
+            const username = document.getElementById('username-in').value;
+            if (!username) return alert("Please enter a username");
+
+            try {
+                const res = await fetch(BACKEND_URL + '/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username })
+                });
+                const data = await res.json();
+                currentUser = data.user_id;
+
+                document.getElementById('auth-forms').classList.add('hidden');
+                document.getElementById('dashboard').classList.remove('hidden');
+                document.getElementById('user-display').innerText = currentUser;
+                getRecommendations();
+            } catch (e) {
+                console.error(e);
+                alert("Login failed (Backend offline?)");
+            }
+        }
+
+        function enterGuest() {
+            currentUser = "guest";
+            enterMode('coach');
+        }
+
+        function enterMode(mode) {
+            currentMode = mode;
+            document.body.className = mode === 'coach' ? 'theme-coach' : 'theme-translator';
+            document.getElementById('mode-title').innerText = mode === 'coach' ? 'Coach Mode' : 'Translator';
+            document.getElementById('view-home').classList.remove('active');
+            document.getElementById('view-workspace').classList.add('active');
+        }
+
+        function goHome() {
+            document.getElementById('view-workspace').classList.remove('active');
+            document.getElementById('view-home').classList.add('active');
+        }
+
+        async function getRecommendations() {
+            if (!currentUser) return;
+            const res = await fetch(BACKEND_URL + `/recommendations?user_id=${currentUser}`);
+            const data = await res.json();
+            document.getElementById('rec-list').innerHTML = data.map(i => `<div>• ${i}</div>`).join('');
+        }
+
+        // --- VOICE LOGIC ---
+        if ('webkitSpeechRecognition' in window) {
+            recognition = new webkitSpeechRecognition();
+            recognition.continuous = false;
+            recognition.interimResults = false;
+            recognition.lang = 'en-US';
+
+            recognition.onstart = () => {
+                isListening = true;
+                document.querySelector('.stage').classList.add('listening');
+                document.getElementById('status-text').innerText = "LISTENING...";
+            };
+
+            recognition.onresult = (event) => {
+                const text = event.results[0][0].transcript;
+                processTurn(text);
+            };
+
+            recognition.onend = () => {
+                isListening = false;
+                document.querySelector('.stage').classList.remove('listening');
+                // Don't reset status immediately if processing
+            };
+
+            recognition.onerror = () => {
+                isListening = false;
+                document.querySelector('.stage').classList.remove('listening');
+                document.getElementById('status-text').innerText = "ERROR - TRY AGAIN";
+            };
+        }
+
+        function toggleMic() {
+            if (!recognition) return alert("Browser not supported");
+            if (isListening) recognition.stop();
+            else recognition.start();
+        }
+
+        async function processTurn(text) {
+            document.getElementById('status-text').innerText = "THINKING...";
+            try {
+                const res = await fetch(BACKEND_URL + '/turn', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        user_text: text,
+                        mode: currentMode,
+                        user_id: currentUser,
+                        target_lang: document.getElementById('lang-select-home').value
+                    })
+                });
+                const data = await res.json();
+                document.getElementById('response-text').innerText = data.reply_text;
+                document.getElementById('status-text').innerText = "IDLE";
+
+                if (data.audio_data) {
+                    const audio = new Audio("data:audio/mp3;base64," + data.audio_data);
+                    audio.play();
+                }
+
+            } catch (e) {
+                document.getElementById('status-text').innerText = "ERROR";
+            }
+        }
+
+    </script>
+</body>
+
+</html>

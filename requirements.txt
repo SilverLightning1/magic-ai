@@ -1,0 +1,7 @@
+Flask
+flask-cors
+requests
+google-cloud-firestore
+google-cloud-secret-manager
+google-cloud-aiplatform
+gunicorn
