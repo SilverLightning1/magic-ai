@@ -19,3 +19,13 @@ magic-backend/__pycache__/
 .bashrc
 
 .env
+
+# Local DB
+history_*.json
+profile_*.json
+*.json
+
+# Utility Scripts
+list_models.py
+test_fallback_model.py
+
