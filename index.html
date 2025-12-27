@@ -37,14 +37,41 @@
 
         /* --- AMBIENT BACKGROUND --- */
         #starfield {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            overflow: hidden;
+            pointer-events: none;
+        }
+
+        .star {
             position: absolute;
-            top: -20%;
-            left: -20%;
-            width: 140%;
-            height: 140%;
-            background: radial-gradient(circle at 50% 50%, #1a1a1a 0%, #000 60%);
-            z-index: -2;
-            transition: transform 0.05s linear;
+            background: white;
+            border-radius: 50%;
+            opacity: 0.8;
+            box-shadow: 0 0 2px rgba(255, 255, 255, 0.8);
+            animation: moveStars 100s linear infinite;
+        }
+
+        @keyframes moveStars {
+            from {
+                transform: translateY(0);
+            }
+
+            to {
+                transform: translateY(-2000px);
+            }
+        }
+
+        .star-layer2 {
+            animation: moveStars 150s linear infinite;
+        }
+
+        .star-layer3 {
+            animation: moveStars 200s linear infinite;
         }
 
         .nebula {
@@ -837,7 +864,38 @@
 
         }, 1000);
 
+        // Initialize
+        createStars();
+
+        function createStars() {
+            const container = document.getElementById('starfield');
+            const starCount = 150;
+
+            for (let i = 0; i < starCount; i++) {
+                const star = document.createElement('div');
+                star.className = 'star';
+
+                // Random Size
+                const size = Math.random() * 2 + 1;
+                star.style.width = size + 'px';
+                star.style.height = size + 'px';
+
+                // Random Position
+                star.style.left = Math.random() * 100 + '%';
+                star.style.top = Math.random() * 100 + '%';
+
+                // Random Delay
+                star.style.animationDelay = (Math.random() * -100) + 's';
+
+                // Layers for Parallax
+                if (size < 1.5) star.classList.add('star-layer3');
+                else if (size < 2) star.classList.add('star-layer2');
+
+                container.appendChild(star);
+            }
+        }
     </script>
 </body>
 
 </html>
+```
