@@ -697,17 +697,24 @@
         // --- VISUALIZER ---
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         let analyser, micSource, frame;
+        let globalStream = null;
 
         async function startVisualizer() {
             if (audioCtx.state === 'suspended') audioCtx.resume();
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                micSource = audioCtx.createMediaStreamSource(stream);
-                analyser = audioCtx.createAnalyser();
-                analyser.fftSize = 64;
-                micSource.connect(analyser);
+                if (!globalStream) {
+                    globalStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                }
+
+                // Only create source if not already connected
+                if (!micSource) {
+                    micSource = audioCtx.createMediaStreamSource(globalStream);
+                    analyser = audioCtx.createAnalyser();
+                    analyser.fftSize = 64;
+                    micSource.connect(analyser);
+                }
                 loopVisualizer();
-            } catch (e) { }
+            } catch (e) { console.error("Mic Access Error:", e); }
         }
 
         function stopVisualizer() {

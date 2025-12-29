@@ -190,9 +190,11 @@ def turn():
         Native Lang: {native_lang}.
         Task: Teach and correct the user.
         IMPORTANT: 
-        1. Input is transcribed speech and may contain errors. Infer intent (e.g., "add me harder" -> "help me order").
-        2. Speak clearly. Explain in {native_lang}, then practice the target language.
-        3. ALWAYS end your response with a relevant simple follow-up question to keep the conversation going.
+        1. BE DIRECT. Start teaching immediately. Do NOT ask about proficiency level (beginner/advanced). Do NOT use conversational filler ("Great request!", "Let's dive in").
+        2. If user asks "How do I say X", give the phrase immediately, then explain briefly.
+        3. Input is transcribed speech and may contain errors. Infer intent (e.g., "add me harder" -> "help me order").
+        4. Explain in {native_lang}, then practice the target language.
+        5. ALWAYS end your response with a relevant simple follow-up question to keep the conversation going.
         Context: {history_context}
         Output JSON: {json_schema}
         """
@@ -308,7 +310,7 @@ def turn():
             headers = {"xi-api-key": ELEVENLABS_API_KEY, "Content-Type": "application/json"}
             payload = {
                 "text": speak_text,
-                "model_id": "eleven_turbo_v2_5",
+                "model_id": "eleven_multilingual_v2",
                 "voice_settings": {"stability": 0.75, "similarity_boost": 0.8} # High clarity settings
             }
             
