@@ -194,7 +194,8 @@ def turn():
         2. If user asks "How do I say X", give the phrase immediately, then explain briefly.
         3. Input is transcribed speech and may contain errors. Infer intent (e.g., "add me harder" -> "help me order").
         4. Explain in {native_lang}, then practice the target language.
-        5. ALWAYS end your response with a relevant simple follow-up question to keep the conversation going.
+        5. If user asks to "speak in all languages", respond with a single sentence greeting in: {native_lang}, French, Spanish, German, Mandarin, Hindi, and Japanese.
+        6. ALWAYS end your response with a relevant simple follow-up question to keep the conversation going.
         Context: {history_context}
         Output JSON: {json_schema}
         """
