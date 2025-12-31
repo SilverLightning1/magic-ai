@@ -813,6 +813,24 @@
 
                 const data = await res.json();
 
+                // TTS ERROR HANDLING
+                if (data.tts_error) {
+                    console.warn("Backend Voice Error:", data.tts_error);
+                    let errMsg = "VOICE ERROR";
+                    if (data.tts_error === "auth_failed") errMsg = "KEY INVALID";
+                    if (data.tts_error === "auth_missing") errMsg = "KEY MISSING";
+                    if (data.tts_error === "quota_exceeded") errMsg = "QUOTA EXCEEDED";
+
+                    document.getElementById('status-label').innerText = errMsg;
+                    document.getElementById('status-label').style.color = "#ef4444"; // Red warning
+
+                    // Reset after 3s
+                    setTimeout(() => {
+                        document.getElementById('status-label').innerText = "SPEAKING"; // Allow fallback to take over visual state
+                        document.getElementById('status-label').style.color = "var(--secondary-glow)";
+                    }, 3000);
+                }
+
                 // Update Target Lang?
                 if (data.lang_update && data.lang_update !== "null") {
                     targetLangCode = data.lang_update;
@@ -837,7 +855,10 @@
                 void respEl.offsetWidth; // trigger reflow
                 respEl.classList.add('simple-fade');
 
-                document.getElementById('status-label').innerText = "SPEAKING";
+                // Don't overwrite error status
+                if (!document.getElementById('status-label').innerText.includes("ERROR") && !document.getElementById('status-label').innerText.includes("KEY")) {
+                    document.getElementById('status-label').innerText = "SPEAKING";
+                }
                 document.getElementById('stage').classList.add('stage-speaking');
 
                 if (data.audio_data) {

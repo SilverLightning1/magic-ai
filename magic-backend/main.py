@@ -16,21 +16,17 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Environment Loading
-env_vars = {}
-env_path = ".env"
-if not os.path.exists(env_path):
-    env_path = "../.env"
+from dotenv import load_dotenv
+load_dotenv() # Load from .env file directly
 
-if os.path.exists(env_path):
-    with open(env_path, "r") as f:
-        for line in f:
-            line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                key, value = line.split("=", 1)
-                env_vars[key.strip()] = value.strip()
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY")
 
-GEMINI_API_KEY = env_vars.get("GEMINI_API_KEY")
-ELEVENLABS_API_KEY = env_vars.get("ELEVENLABS_API_KEY")
+if ELEVENLABS_API_KEY:
+    masked_key = ELEVENLABS_API_KEY[:4] + "*" * (max(0, len(ELEVENLABS_API_KEY) - 4))
+    logger.info(f"Loaded ElevenLabs Key: {masked_key}")
+else:
+    logger.warning("No ElevenLabs Key found.")
 
 # Initialize Flask
 app = Flask(__name__)
@@ -188,36 +184,36 @@ def turn():
     if mode == "coach":
         system_instr = f"""Role: Polyglot Language Coach.
         Native Lang: {native_lang}.
-        Task: Teach and correct the user.
+        Task: Teach, correct, and roleplay with the user.
         IMPORTANT: 
-        1. BE DIRECT. Start teaching immediately. Do NOT ask about proficiency level (beginner/advanced). Do NOT use conversational filler ("Great request!", "Let's dive in").
-        2. If user asks "How do I say X", give the phrase immediately, then explain briefly.
-        3. Input is transcribed speech and may contain errors. Infer intent (e.g., "add me harder" -> "help me order").
-        4. Explain in {native_lang}, then practice the target language.
-        5. If user asks to "speak in all languages", respond with a single sentence greeting in: {native_lang}, French, Spanish, German, Mandarin, Hindi, and Japanese.
-        6. ALWAYS end your response with a relevant simple follow-up question to keep the conversation going.
-        Context: {history_context}
+        1. STRICT RULE: You are a REACTIVE bot. Do NOT be proactive.
+        2. NO GREETING QUESTIONS: If user says "Hello" or "Hi", reply ONLY with "Hello" or "Hi". Do NOT ask "How can I help?" or "What language?". UNDER NO CIRCUMSTANCES ask these questions.
+        3. TEACHING MODE: If user says "Help me order X", provide the phrase immediately in the target language (if known) or ask which language. Then explain pronunciation.
+        4. REALISM: If user speaks in target language, reply naturally in that language to keep the conversation going.
+        5. CORRECTNESS: If user makes a grammar mistake, provide the corrected phrase in "correction" field, but keep the spoken reply natural.
+        6. CONTEXT: {history_context}
         Output JSON: {json_schema}
         """
     else:
         # Translator Mode (Optimized for Pure Speed)
         if msg_direction == "them_to_me":
-             system_instr = f"""Role: Polyglot Interpreter.
+             system_instr = f"""Role: Strict Interpreter.
              Mode: Foreign Language -> Native({native_lang}).
-             Action: Translate immediately. Preserve perspective (I am -> I am).
+             Action: Translate specifically what was said.
              IMPORTANT: 
-             1. Output ONLY the translated text. No conversational filler.
-             2. If user says "Switch to [Lang]", set "update_target_lang".
-             3. If input is clearly foreign text (not {native_lang}) and no target lang is set, infer "update_target_lang".
+             1. NO FILLER WORDS. DO NOT say "He says", "The translation is", "Sure". 
+             2. Output ONLY the raw translation.
+             3. If user says "Switch to [Lang]", set "update_target_lang".
              Output JSON: {json_schema}
              """
         else:
-            system_instr = f"""Role: Polyglot Interpreter.
+            system_instr = f"""Role: Strict Interpreter.
             Mode: Native({native_lang}) -> Target Language.
-            Action: Translate immediately. Preserve perspective.
+            Action: Translate specifically what was said.
             IMPORTANT:
-            1. Output ONLY the translated text. No conversational filler.
-            2. If user says "Switch to [Lang]" or "I'm speaking to [Lang]", set "update_target_lang".
+            1. NO FILLER WORDS. DO NOT say "I will translate", "Here is the translation".
+            2. Output ONLY the raw translation.
+            3. If user says "Switch to [Lang]" set "update_target_lang".
             Output JSON: {json_schema}
             """
 
@@ -290,6 +286,7 @@ def turn():
     # 4. VOICE (ElevenLabs)
     audio_b64 = ""
     silent_mode = False
+    tts_error = None  # New field for error tracking
     speak_text = ai_response.get("reply_text", "")
     
     # Use speak_segments if available for cleaner text
@@ -319,13 +316,25 @@ def turn():
             if tts_res.status_code == 200:
                 audio_b64 = base64.b64encode(tts_res.content).decode("utf-8")
             else:
-                logger.warning(f"TTS Failed: {tts_res.status_code}")
+                logger.warning(f"TTS Failed: {tts_res.status_code} - Body: {tts_res.text}")
                 silent_mode = True
+                # Map status code to human-friendly error codes
+                if "quota_exceeded" in tts_res.text:
+                    tts_error = "quota_exceeded"
+                elif tts_res.status_code == 401:
+                    tts_error = "auth_failed"
+                elif tts_res.status_code == 429:
+                    tts_error = "quota_exceeded"
+                else:
+                    tts_error = "generic_error"
         except Exception as e:
              logger.error(f"TTS Exception: {e}")
              silent_mode = True
+             tts_error = "connection_error"
     else:
         silent_mode = True
+        if not ELEVENLABS_API_KEY and speak_text:
+             tts_error = "auth_missing"
 
     # 5. PERSISTENCE
     save_turn(user_id, user_text, ai_response.get("reply_text"), mode)
@@ -336,6 +345,7 @@ def turn():
         "audio_data": audio_b64,
         "mode": mode,
         "silent_mode": silent_mode,
+        "tts_error": tts_error, # Return error code to frontend
         "lang_update": ai_response.get("update_target_lang"),
         # Compatibility fields
         "native_lang_update": None 
